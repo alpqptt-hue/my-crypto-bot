@@ -1,7 +1,7 @@
+from datetime import datetime, timedelta
 import os
-import time
-from datetime import datetime
 from threading import Thread
+import time
 from flask import Flask
 import requests
 
@@ -32,6 +32,7 @@ balance_usd = INITIAL_BALANCE_USD
 active_trades = {}
 trade_history = []
 MAX_CONCURRENT_TRADES = 3
+MAX_TRADE_DURATION_MINUTES = 30  # الخروج التلقائي بعد 30 دقيقة
 
 # قائمة العملات القوية
 WATCHLIST = [
@@ -107,6 +108,10 @@ def check_and_execute_trades():
 
       tp_price = price * 1.02
       sl_price = price * 0.99
+      entry_time = datetime.now()
+      exit_time_str = (
+          entry_time + timedelta(minutes=MAX_TRADE_DURATION_MINUTES)
+      ).strftime('%H:%M')
 
       active_trades[symbol] = {
           'entry_price': price,
@@ -114,7 +119,7 @@ def check_and_execute_trades():
           'invested_usd': trade_amount_usd,
           'tp': tp_price,
           'sl': sl_price,
-          'entry_time': datetime.now(),
+          'entry_time': entry_time,
       }
 
       msg = (
@@ -125,6 +130,7 @@ def check_and_execute_trades():
           f'💰 *المبلغ المستثمر:* `${trade_amount_usd:.2f}` ({trade_amount_usd * USD_TO_SAR:.1f} ريال)\n'
           f'🎯 *جني الأرباح (TP):* `${tp_price:,.4f}` (+2.0%)\n'
           f'🛑 *وقف الخسارة (SL):* `${sl_price:,.4f}` (-1.0%)\n'
+          f'⏰ *وقت الخروج التلقائي:* بعد 30 دقيقة (حوالي {exit_time_str})\n'
           f'💼 *الرصيد المتبقي:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
       )
       send_telegram_alert(msg)
@@ -134,7 +140,7 @@ def check_and_execute_trades():
 
 
 def update_active_trades():
-  """متابعة الصفقات وحساب الربح والخسارة بدقة"""
+  """متابعة الصفقات وحساب الربح والخسارة والوقت بدقة"""
   global balance_usd
 
   for symbol, trade in list(active_trades.items()):
@@ -143,6 +149,8 @@ def update_active_trades():
       continue
 
     current_price = data['price']
+    current_time = datetime.now()
+    elapsed_minutes = (current_time - trade['entry_time']).total_seconds() / 60.0
 
     # 1️⃣ تحقّق هدف الأرباح (+2%)
     if current_price >= trade['tp']:
@@ -179,6 +187,27 @@ def update_active_trades():
 
       trade_history.append(
           {'symbol': symbol, 'pnl_usd': pnl_usd, 'win': False}
+      )
+      del active_trades[symbol]
+
+    # 3️⃣ الخروج الزمني الذكي (بعد مرور 30 دقيقة بالضبط)
+    elif elapsed_minutes >= MAX_TRADE_DURATION_MINUTES:
+      return_usd = trade['tokens'] * current_price
+      pnl_usd = return_usd - trade['invested_usd']
+      balance_usd += return_usd
+      is_win = pnl_usd > 0
+
+      msg = (
+          f'⏰ *خروج زمني ذكي بعد 30 دقيقة*\n'
+          f'🪙 *العملة:* `{symbol}`\n'
+          f'💵 *سعر الخروج:* `${current_price:,.4f}`\n'
+          f'📊 *النتيجة:* `${pnl_usd:+.2f}$` (`{pnl_usd * USD_TO_SAR:+.1f}` ريال)\n'
+          f'💼 *رصيد المحفظة الجديد:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
+      )
+      send_telegram_alert(msg)
+
+      trade_history.append(
+          {'symbol': symbol, 'pnl_usd': pnl_usd, 'win': is_win}
       )
       del active_trades[symbol]
 
@@ -225,7 +254,8 @@ if __name__ == '__main__':
   welcome_msg = (
       '🚀 *تم تشغيل بوت الكريبتو (Breakout + Volume) بنجاح!*\n'
       '💰 *رأس المال المبدئي:* 1,000 ريال سعودي ($266.67 USD)\n'
-      '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100%.'
+      '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100% مع ميزة الخروج التلقائي بعد 30'
+      ' دقيقة.'
   )
   send_telegram_alert(welcome_msg)
 
