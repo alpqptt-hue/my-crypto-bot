@@ -17,8 +17,8 @@ def start_server():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-# 2️⃣ إعدادات التليجرام (بوت الميم كوينز)
-TELEGRAM_BOT_TOKEN = "8596265665:AAEdjiNIHoA6D-oFmr_iCsaBbomwcdhqgp0"
+# 2️⃣ إعدادات التليجرام (التوكن الجديد لبوت الميم كوينز)
+TELEGRAM_BOT_TOKEN = "8504054374:AAHf5h-zp7rBcSlMrLIQc1wG88ffA0mEWxc"
 CHAT_ID = "1015963752"
 
 # 3️⃣ إدارة المحفظة والأداء وحفظ البيانات
