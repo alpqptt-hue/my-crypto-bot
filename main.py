@@ -254,19 +254,23 @@ if __name__ == '__main__':
   welcome_msg = (
       '🚀 *تم تشغيل بوت الكريبتو (Breakout + Volume) بنجاح!*\n'
       '💰 *رأس المال المبدئي:* 1,000 ريال سعودي ($266.67 USD)\n'
-      '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100% مع ميزة الخروج التلقائي بعد 30'
-      ' دقيقة.'
+      '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100% مع حماية ضد التوقف.'
   )
   send_telegram_alert(welcome_msg)
 
   last_report_time = time.time()
 
+  # حلقة رئيسية محمية بالكامل لضمان عدم توقف البوت نهائياً
   while True:
-    check_and_execute_trades()
-    update_active_trades()
+    try:
+      check_and_execute_trades()
+      update_active_trades()
 
-    if time.time() - last_report_time >= 3600:
-      send_hourly_report()
-      last_report_time = time.time()
+      if time.time() - last_report_time >= 3600:
+        send_hourly_report()
+        last_report_time = time.time()
+
+    except Exception as e:
+      print(f'⚠️ خطأ في حلقة التشغيل الرئيسية: {e}')
 
     time.sleep(15)
