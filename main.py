@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-  return 'Crypto Breakout Bot is Running 24/7!', 200
+  return 'MEXC Spot Radar Bot is Running 24/7!', 200
 
 
 def start_server():
@@ -19,7 +19,7 @@ def start_server():
   app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
-# 2️⃣ إعدادات التليجرام للبوت الجديد للكريبتو
+# 2️⃣ إعدادات التليجرام للبوت
 TELEGRAM_BOT_TOKEN = '8504054374:AAHf5h-zp7rBcSlMrLIQc1wG88ffA0mEWxc'
 CHAT_ID = '1015963752'
 
@@ -33,20 +33,6 @@ active_trades = {}
 trade_history = []
 MAX_CONCURRENT_TRADES = 3
 MAX_TRADE_DURATION_MINUTES = 30  # الخروج التلقائي بعد 30 دقيقة
-
-# قائمة العملات القوية
-WATCHLIST = [
-    'BTCUSDT',
-    'ETHUSDT',
-    'SOLUSDT',
-    'BNBUSDT',
-    'XRPUSDT',
-    'ADAUSDT',
-    'AVAXUSDT',
-    'LINKUSDT',
-    'DOGEUSDT',
-    'NEARUSDT',
-]
 
 
 def send_telegram_alert(message):
@@ -63,80 +49,121 @@ def send_telegram_alert(message):
     print(f'❌ خطأ تليجرام: {e}')
 
 
-def get_crypto_price_and_volume(symbol):
-  """جلب بيانات السعر والحجم الحقيقي من Binance API"""
+def get_mexc_all_spot_pairs():
+  """سكان شامل لكل عملات السبوت الموجودة في منصة MEXC مقابل USDT"""
+  opportunities = []
   try:
-    url = f'https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}'
-    res = requests.get(url, timeout=5)
+    # جلب الأسعار وتغيرات 24 ساعة لكل أزواج السبوت في MEXC دفعة واحدة
+    url = 'https://api.mexc.com/api/v3/ticker/24hr'
+    res = requests.get(url, timeout=10)
     if res.status_code == 200:
-      data = res.json()
-      return {
-          'price': float(data['lastPrice']),
-          'price_change_pct': float(data['priceChangePercent']),
-          'volume_usd': float(data['quoteVolume']),
-      }
+      tickers = res.json()
+      for ticker in tickers:
+        symbol = ticker.get('symbol', '')
+
+        # نختار فقط الأزواج التي تنتهي بـ USDT (أسواق السبوت) ونستبعد العملات المستقرة الكبرى
+        if not symbol.endswith('USDT'):
+          continue
+
+        base_asset = symbol[:-4]
+        excluded = [
+            'USDC',
+            'USDT',
+            'FDUSD',
+            'DAI',
+            'BTC',
+            'ETH',
+            'BUSD',
+            'TUSD',
+        ]
+        if base_asset in excluded:
+          continue
+
+        price = float(ticker.get('lastPrice', 0) or 0)
+        price_change = float(ticker.get('priceChangePercent', 0) or 0)
+        volume_usd = float(ticker.get('quoteVolume', 0) or 0)
+
+        # 🎯 شروط مرنة لاصطياد الفرص السريعة في سبوت مكسي
+        if price > 0 and price_change >= -0.5 and volume_usd >= 15000:
+          opportunities.append(
+              {
+                  'symbol': symbol,
+                  'price': price,
+                  'change': price_change,
+                  'volume': volume_usd,
+              }
+          )
   except Exception as e:
-    print(f'❌ خطأ جلب سعر {symbol}: {e}')
-  return None
+    print(f'❌ خطأ في سكان MEXC API: {e}')
+  return opportunities
 
 
 def check_and_execute_trades():
-  """فحص استراتيجية Breakout + Volume"""
+  """فحص وتنفيذ الصفقات من نتائج سكان مكسي"""
   global balance_usd
 
   if len(active_trades) >= MAX_CONCURRENT_TRADES:
     return
 
-  for symbol in WATCHLIST:
+  opportunities = get_mexc_all_spot_pairs()
+
+  for opp in opportunities:
+    symbol = opp['symbol']
+    price = opp['price']
+
     if symbol in active_trades:
       continue
 
-    data = get_crypto_price_and_volume(symbol)
-    if not data:
+    trade_amount_usd = balance_usd * 0.25
+    if trade_amount_usd < 10:
       continue
 
-    price = data['price']
-    price_change = data['price_change_pct']
+    balance_usd -= trade_amount_usd
+    tokens = trade_amount_usd / price
 
-    if price_change >= 1.5:
-      trade_amount_usd = balance_usd * 0.25
-      if trade_amount_usd < 10:
-        continue
+    tp_price = price * 1.02  # هدف 2%
+    sl_price = price * 0.99  # وقف خسارة 1%
+    entry_time = datetime.now()
+    exit_time_str = (
+        entry_time + timedelta(minutes=MAX_TRADE_DURATION_MINUTES)
+    ).strftime('%H:%M')
 
-      balance_usd -= trade_amount_usd
-      tokens = trade_amount_usd / price
+    active_trades[symbol] = {
+        'entry_price': price,
+        'tokens': tokens,
+        'invested_usd': trade_amount_usd,
+        'tp': tp_price,
+        'sl': sl_price,
+        'entry_time': entry_time,
+    }
 
-      tp_price = price * 1.02
-      sl_price = price * 0.99
-      entry_time = datetime.now()
-      exit_time_str = (
-          entry_time + timedelta(minutes=MAX_TRADE_DURATION_MINUTES)
-      ).strftime('%H:%M')
+    msg = (
+        f'🚀 *دخل صفقة سبوت جديدة (MEXC Scanner)*\n'
+        f'-----------------------------------\n'
+        f'🪙 *الزوج:* `{symbol}`\n'
+        f'💵 *سعر الدخول:* `${price:,.6f}`\n'
+        f'💰 *المبلغ المستثمر:* `${trade_amount_usd:.2f}` ({trade_amount_usd * USD_TO_SAR:.1f} ريال)\n'
+        f'🎯 *جني الأرباح (TP):* `${tp_price:,.6f}` (+2.0%)\n'
+        f'🛑 *وقف الخسارة (SL):* `${sl_price:,.6f}` (-1.0%)\n'
+        f'⏰ *وقت الخروج التلقائي:* بعد 30 دقيقة (حوالي {exit_time_str})\n'
+        f'💼 *الرصيد المتبقي:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
+    )
+    send_telegram_alert(msg)
 
-      active_trades[symbol] = {
-          'entry_price': price,
-          'tokens': tokens,
-          'invested_usd': trade_amount_usd,
-          'tp': tp_price,
-          'sl': sl_price,
-          'entry_time': entry_time,
-      }
+    if len(active_trades) >= MAX_CONCURRENT_TRADES:
+      break
 
-      msg = (
-          f'🚀 *دخول صفقة جديد (Breakout + Volume)*\n'
-          f'-----------------------------------\n'
-          f'🪙 *العملة:* `{symbol}`\n'
-          f'💵 *سعر الدخول:* `${price:,.4f}`\n'
-          f'💰 *المبلغ المستثمر:* `${trade_amount_usd:.2f}` ({trade_amount_usd * USD_TO_SAR:.1f} ريال)\n'
-          f'🎯 *جني الأرباح (TP):* `${tp_price:,.4f}` (+2.0%)\n'
-          f'🛑 *وقف الخسارة (SL):* `${sl_price:,.4f}` (-1.0%)\n'
-          f'⏰ *وقت الخروج التلقائي:* بعد 30 دقيقة (حوالي {exit_time_str})\n'
-          f'💼 *الرصيد المتبقي:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
-      )
-      send_telegram_alert(msg)
 
-      if len(active_trades) >= MAX_CONCURRENT_TRADES:
-        break
+def get_current_mexc_price(symbol):
+  """جلب السعر الحالي المحدث للعملة من مكسي"""
+  try:
+    url = f'https://api.mexc.com/api/v3/ticker/price?symbol={symbol}'
+    res = requests.get(url, timeout=5)
+    if res.status_code == 200:
+      return float(res.json().get('price', 0))
+  except:
+    pass
+  return None
 
 
 def update_active_trades():
@@ -144,11 +171,10 @@ def update_active_trades():
   global balance_usd
 
   for symbol, trade in list(active_trades.items()):
-    data = get_crypto_price_and_volume(symbol)
-    if not data:
+    current_price = get_current_mexc_price(symbol)
+    if not current_price or current_price <= 0:
       continue
 
-    current_price = data['price']
     current_time = datetime.now()
     elapsed_minutes = (current_time - trade['entry_time']).total_seconds() / 60.0
 
@@ -159,9 +185,9 @@ def update_active_trades():
       balance_usd += return_usd
 
       msg = (
-          f'🎉 *تم تحقيق الهدف بنجاح! (+2%)*\n'
-          f'🪙 *العملة:* `{symbol}`\n'
-          f'💵 *سعر الخروج:* `${current_price:,.4f}`\n'
+          f'🎉 *تم تحقيق الهدف بنجاح! (+2%) [MEXC]*\n'
+          f'🪙 *الزوج:* `{symbol}`\n'
+          f'💵 *سعر الخروج:* `${current_price:,.6f}`\n'
           f'💰 *الربح المحقق:* `+${pnl_usd:.2f}` (`+{pnl_usd * USD_TO_SAR:.1f}` ريال)\n'
           f'💼 *رصيد المحفظة الجديد:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
       )
@@ -177,9 +203,9 @@ def update_active_trades():
       balance_usd += return_usd
 
       msg = (
-          f'🛑 *ضرب وقف الخسارة! (-1%)*\n'
-          f'🪙 *العملة:* `{symbol}`\n'
-          f'💵 *سعر الخروج:* `${current_price:,.4f}`\n'
+          f'🛑 *ضرب وقف الخسارة! (-1%) [MEXC]*\n'
+          f'🪙 *الزوج:* `{symbol}`\n'
+          f'💵 *سعر الخروج:* `${current_price:,.6f}`\n'
           f'📉 *الخسارة:* `${pnl_usd:.2f}` (`{pnl_usd * USD_TO_SAR:.1f}` ريال)\n'
           f'💼 *رصيد المحفظة الجديد:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
       )
@@ -198,10 +224,10 @@ def update_active_trades():
       is_win = pnl_usd > 0
 
       msg = (
-          f'⏰ *خروج زمني ذكي بعد 30 دقيقة*\n'
-          f'🪙 *العملة:* `{symbol}`\n'
-          f'💵 *سعر الخروج:* `${current_price:,.4f}`\n'
-          f'📊 *النتيجة:* `${pnl_usd:+.2f}$` (`{pnl_usd * USD_TO_SAR:+.1f}` ريال)\n'
+          f'⏰ *خروج زمني ذكي بعد 30 دقيقة [MEXC]*\n'
+          f'🪙 *الزوج:* `{symbol}`\n'
+          f'💵 *سعر الخروج:* `${current_price:,.6f}`\n'
+          f'📊 *النتيجة:* `${pnl_usd:+.2f}$` (`{pnl_usd * USD_TO_SAR:.1f}` ريال)\n'
           f'💼 *رصيد المحفظة الجديد:* `${balance_usd:.2f}` ({balance_usd * USD_TO_SAR:.1f} ريال)'
       )
       send_telegram_alert(msg)
@@ -216,9 +242,9 @@ def send_hourly_report():
   """تقرير ساعي دقيق ومحسوب 100%"""
   unrealized_usd = 0.0
   for symbol, trade in active_trades.items():
-    data = get_crypto_price_and_volume(symbol)
-    if data:
-      unrealized_usd += trade['tokens'] * data['price']
+    cp = get_current_mexc_price(symbol)
+    if cp and cp > 0:
+      unrealized_usd += trade['tokens'] * cp
     else:
       unrealized_usd += trade['invested_usd']
 
@@ -233,7 +259,7 @@ def send_hourly_report():
   win_rate = (wins / total_closed * 100) if total_closed > 0 else 0.0
 
   report = (
-      f'📊 *التقرير الساعي المحدث لبوت الكريبتو الجديد*\n'
+      f'📊 *التقرير الساعي لبوت مكسي للسبوت (MEXC)*\n'
       f'-----------------------------------\n'
       f'💰 *رأس المال الحالي:* {total_equity_sar:.2f} ريال (${total_equity_usd:.2f})\n'
       f'📈 *صافي الأرباح/الخسائر:* {pnl_sar:+.2f} ريال ({pnl_pct:+.2f}%)\n'
@@ -241,7 +267,7 @@ def send_hourly_report():
       f'✅ *إجمالي الصفقات المغلقة:* {total_closed} (ناجحة: {wins} | خاسرة: {total_closed - wins})\n'
       f'🎯 *نسبة نجاح الاستراتيجية:* {win_rate:.1f}%\n'
       f'-----------------------------------\n'
-      f'🟢 *البوت يعمل بسلاسة 24/7 على Render*'
+      f'🟢 *البوت يسحب عملات MEXC Spot بانتظام 24/7*'
   )
   send_telegram_alert(report)
 
@@ -252,9 +278,9 @@ if __name__ == '__main__':
   server_thread.start()
 
   welcome_msg = (
-      '🚀 *تم تشغيل بوت الكريبتو الجديد (t.me/My_Crypto_511_BOT) بنجاح!*\n'
+      '🚀 *تم تفعيل وتشغيل بوت مكسي لكل عملات السبوت بنجاح!* (MEXC Scanner)\n'
       '💰 *رأس المال المبدئي:* 1,000 ريال سعودي ($266.67 USD)\n'
-      '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100% مع حماية ضد التوقف.'
+      '⏰ سيصلك التقرير الساعي وتعمل الصفقات مباشرة.'
   )
   send_telegram_alert(welcome_msg)
 
