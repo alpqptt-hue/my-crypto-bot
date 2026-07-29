@@ -19,8 +19,8 @@ def start_server():
   app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
-# 2️⃣ إعدادات التليجرام للبوت (My Crypto Bot)
-TELEGRAM_BOT_TOKEN = '8596265665:AAEdjiNIHoA6D-oFmr_iCsaBbomwcdhqgp0'
+# 2️⃣ إعدادات التليجرام للبوت الجديد للكريبتو
+TELEGRAM_BOT_TOKEN = '8504054374:AAHf5h-zp7rBcSlMrLIQc1wG88ffA0mEWxc'
 CHAT_ID = '1015963752'
 
 # 3️⃣ إدارة المحفظة الوهمية (1,000 ريال سعودي = ~266.67 دولار)
@@ -233,7 +233,7 @@ def send_hourly_report():
   win_rate = (wins / total_closed * 100) if total_closed > 0 else 0.0
 
   report = (
-      f'📊 *التقرير الساعي المحدث لبوت الكريبتو*\n'
+      f'📊 *التقرير الساعي المحدث لبوت الكريبتو الجديد*\n'
       f'-----------------------------------\n'
       f'💰 *رأس المال الحالي:* {total_equity_sar:.2f} ريال (${total_equity_usd:.2f})\n'
       f'📈 *صافي الأرباح/الخسائر:* {pnl_sar:+.2f} ريال ({pnl_pct:+.2f}%)\n'
@@ -252,7 +252,7 @@ if __name__ == '__main__':
   server_thread.start()
 
   welcome_msg = (
-      '🚀 *تم تشغيل بوت الكريبتو (Breakout + Volume) بنجاح!*\n'
+      '🚀 *تم تشغيل بوت الكريبتو الجديد (t.me/My_Crypto_511_BOT) بنجاح!*\n'
       '💰 *رأس المال المبدئي:* 1,000 ريال سعودي ($266.67 USD)\n'
       '⏰ سيصلك تقرير ساعي مضبوط ومحدث 100% مع حماية ضد التوقف.'
   )
@@ -260,7 +260,6 @@ if __name__ == '__main__':
 
   last_report_time = time.time()
 
-  # حلقة رئيسية محمية بالكامل لضمان عدم توقف البوت نهائياً
   while True:
     try:
       check_and_execute_trades()
